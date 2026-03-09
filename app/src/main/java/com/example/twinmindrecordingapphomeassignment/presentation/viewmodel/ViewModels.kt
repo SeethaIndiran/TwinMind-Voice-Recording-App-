@@ -169,8 +169,6 @@ class SummaryViewModel @Inject constructor(
     private val _recording = MutableStateFlow<Recording?>(null)
     val recording: StateFlow<Recording?> = _recording.asStateFlow()
 
-
-
     private var isGeneratingSummary = false
     private var recordingObserverJob: Job? = null
 
@@ -182,29 +180,34 @@ class SummaryViewModel @Inject constructor(
             repository.observeRecordingById(recordingId)
                 .collect { recording ->
                     _recording.value = recording
+                    if (recording == null) {
+                        _summaryState.value = SummaryState.Error("Recording not found.")
+                        return@collect
+                    }
 
-                    when {
-                        // Summary exists - only update if we're not currently streaming
-                        recording?.summary != null -> {
-                            if (_summaryState.value !is SummaryState.Streaming) {
-                                isGeneratingSummary = false
+                    when (recording.status) {
+                        RecordingStatus.PROCESSING -> {
+                            _summaryState.value = SummaryState.Loading
+                        }
+                        RecordingStatus.COMPLETED -> {
+                            if (recording.summary != null) {
+                                // Summary is already generated and stored.
                                 _summaryState.value = SummaryState.Completed(recording.summary!!)
+                                isGeneratingSummary = false
+                            } else if (!recording.transcript.isNullOrBlank()) {
+                                // Transcript is ready, but no summary yet. Generate it.
+                                if (!isGeneratingSummary) {
+                                    isGeneratingSummary = true
+                                    generateSummary(recording.id, recording.transcript!!)
+                                }
+                            } else {
+                                // Recording is complete but has no transcript.
+                                _summaryState.value = SummaryState.Error("No speech was detected in the recording. A summary could not be generated.")
+                                isGeneratingSummary = false
                             }
-                            // If we ARE streaming, the streaming state will naturally transition to Completed
                         }
-
-                        // Transcript ready, no summary, not generating
-                        recording != null &&
-                                !recording.transcript.isNullOrBlank() &&
-                                recording.status == RecordingStatus.COMPLETED &&
-                                !isGeneratingSummary -> {
-
-                            isGeneratingSummary = true
-                            generateSummary(recordingId, recording.transcript!!)
-                        }
-
-                        // Waiting for transcript
-                        recording?.transcript.isNullOrBlank() -> {
+                        else -> {
+                            // For any other status, assume it's loading or idle.
                             if (!isGeneratingSummary) {
                                 _summaryState.value = SummaryState.Idle
                             }
@@ -213,30 +216,6 @@ class SummaryViewModel @Inject constructor(
                 }
         }
     }
-
-
-    /* fun generateSummary(recordingId: String, transcript: String) {
-         viewModelScope.launch {
-             _summaryState.value = SummaryState.Loading
-           //  hasSummaryGenerationStarted = false
-
-             try {
-                 repository.generateSummaryStreaming(recordingId, transcript) { summary ->
-                     _summaryState.value = SummaryState.Streaming(summary)
-                 }
-
-                 // Final state will be set by the streaming function
-                 val finalRecording = repository.getRecordingById(recordingId)
-                 finalRecording?.summary?.let {
-                     _summaryState.value = SummaryState.Completed(it)
-                 }
-             } catch (e: Exception) {
-                 _summaryState.value = SummaryState.Error(
-                     e.message ?: "Failed to generate summary"
-                 )
-             }
-         }
-     }*/
 
     fun generateSummary(recordingId: String, transcript: String) {
         viewModelScope.launch {
@@ -271,7 +250,6 @@ class SummaryViewModel @Inject constructor(
     fun retrySummary() {
         val currentRecording = _recording.value
         isGeneratingSummary = false
-      //  hasSummaryGenerationStarted = false
         if (currentRecording != null && !currentRecording.transcript.isNullOrBlank()) {
             generateSummary(currentRecording.id, currentRecording.transcript)
         }
@@ -279,6 +257,5 @@ class SummaryViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-     //   hasSummaryGenerationStarted = false
     }
 }

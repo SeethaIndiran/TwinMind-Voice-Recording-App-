@@ -35,7 +35,7 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun TwinMindRecordingAppHomeAssignmentTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true, // isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit

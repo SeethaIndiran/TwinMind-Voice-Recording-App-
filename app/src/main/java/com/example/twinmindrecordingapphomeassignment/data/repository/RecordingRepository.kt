@@ -16,7 +16,6 @@ import com.example.twinmindrecordingapphomeassignment.data.remote.api.ChatGptSer
 import com.example.twinmindrecordingapphomeassignment.data.remote.api.WhisperApiService
 import com.example.twinmindrecordingapphomeassignment.data.remote.dto.SummaryResponse
 import com.google.gson.Gson
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.io.File
@@ -116,27 +115,21 @@ class RecordingRepository @Inject constructor(
                 ?: return Result.failure(Exception("Chunk not found"))
 
             val audioFile = File(chunk.filePath)
-            val transcript = try {
-                if (audioFile.exists()) {
-                    transcriptionService.transcribe(audioFile)
-                } else {
-                    throw Exception("Audio file not found at ${chunk.filePath}")
-                }
-            } catch (e: Exception) {
-                Log.e("RecordingRepository", "REAL API Transcription failed. Using fallback mock. Error: ${e.message}", e)
-                getMockTranscript(chunk.sequence)
+            if (!audioFile.exists()) {
+                return Result.failure(Exception("Audio file not found"))
             }
-            
-            audioChunkDao.updateChunkTranscript(chunkId, true, transcript)
-            Result.success(transcript)
+
+            val transcript = transcriptionService.transcribe(audioFile)
+            // Whisper can return short hallucinations for silence like "Thank you."
+            // Increased threshold to 15 characters to filter these out.
+            val cleanTranscript = if (transcript.trim().length < 15) "" else transcript
+
+            audioChunkDao.updateChunkTranscript(chunkId, true, cleanTranscript)
+            Result.success(cleanTranscript)
         } catch (e: Exception) {
             Log.e("RecordingRepository", "Transcription error for chunk $chunkId", e)
             Result.failure(e)
         }
-    }
-
-    private fun getMockTranscript(sequence: Int): String {
-        return "This is a fallback transcript for chunk $sequence. The real API failed, likely due to a missing or invalid OpenAI API key."
     }
 
     suspend fun getFullTranscript(recordingId: String): String {
@@ -144,6 +137,7 @@ class RecordingRepository @Inject constructor(
         return chunks.sortedBy { it.sequence }
             .mapNotNull { it.transcript }
             .joinToString(" ")
+            .trim()
     }
 
     suspend fun updateRecordingTranscript(recordingId: String, transcript: String) {
@@ -179,11 +173,18 @@ class RecordingRepository @Inject constructor(
         transcript: String,
         onUpdate: suspend (MeetingSummary) -> Unit
     ) {
+        val trimmedTranscript = transcript.trim()
+
+        // Stricter Check: If the transcript is blank or shorter than 20 characters, 
+        // treat it as if no audio was detected.
+        if (trimmedTranscript.isBlank() || trimmedTranscript.length < 20) {
+            Log.w("RecordingRepository", "Transcript is too short or empty, skipping summary. Content: '$trimmedTranscript'")
+            throw Exception("NO_AUDIO_DETECTED")
+        }
+
         try {
             chatGptService.generateSummary(transcript) { summary ->
                 onUpdate(summary)
-
-                // Save summary to database
                 recordingDao.updateRecordingSummary(
                     id = recordingId,
                     title = summary.title,
@@ -194,16 +195,8 @@ class RecordingRepository @Inject constructor(
                 )
             }
         } catch (e: Exception) {
-            Log.e("RecordingRepository", "REAL API Summary generation failed. Using fallback mock. Error: ${e.message}", e)
-            val mockSummary = MeetingSummary(
-                title = "API Error: Summary Fallback",
-                summary = "The real OpenAI API call failed. Please check your API key in secret.properties. Error: ${e.message}",
-                actionItems = listOf("Verify API Key", "Check Internet Connection"),
-                keyPoints = listOf("Fallback mode active")
-            )
-            delay(1000)
-            onUpdate(mockSummary)
-            generateSummary(recordingId, mockSummary)
+            Log.e("RecordingRepository", "Summary generation failed for recording $recordingId", e)
+            throw e
         }
     }
 }
