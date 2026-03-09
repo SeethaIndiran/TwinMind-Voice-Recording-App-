@@ -8,12 +8,12 @@ Built with **Jetpack Compose**, **MVVM**, **Dagger Hilt**, **Kotlin Coroutines**
 ## Features
 
 - **Voice Recording** – Record audio seamlessly with start, pause, and stop functionality.
-- **Foreground Notification** – Shows active recording status with quick action.
+- **Foreground Notification** – Shows active recording status with quick actions directly from the notification drawer.
 - **Transcription** – Converts recorded audio into text using **OpenAI Whisper API**.  
-- **AI-Powered Summary** – Generates a short, clear summary of the transcript using **OpenAI GPT model**.  
+- **AI-Powered Summary** – Generates a short, clear summary of the transcript using **OpenAI GPT-4**.  
 - **Local Storage** – Saves recordings and summaries in local Room Database.  
 - **Real-Time Updates** – Displays transcription and summary updates live.  
-- **Modern UI** – Built entirely with **Jetpack Compose** for smooth, declarative UI.  
+- **Modern UI** – Built entirely with **Jetpack Compose** with a forced **Dark Theme** for a sleek look.  
 - **Modular Clean Architecture** – Separation of concerns with clear layers for UI, domain, and data.  
 
 ---
@@ -26,9 +26,10 @@ Built with **Jetpack Compose**, **MVVM**, **Dagger Hilt**, **Kotlin Coroutines**
 | **Architecture** | MVVM + Clean Architecture |
 | **Dependency Injection** | Dagger Hilt |
 | **Async Handling** | Kotlin Coroutines, Flows |
+| **Background Tasks** | WorkManager |
 | **Database** | Room |
 | **Network** | Retrofit / OkHttp |
-| **AI/LLM Integration** | OpenAI Whisper & GPT models |
+| **AI Integration** | OpenAI Whisper & GPT-4 |
 
 ---
 
@@ -54,7 +55,7 @@ The app requires an OpenAI API key for transcription and summarization.
    *(Note: `local.properties` is ignored by Git, so your key will remain private.)*
 
 ### 3. Build and Run
-1. Open the project in **Android Studio (Ladybug or newer)**.
+1. Open the project in **Android Studio**.
 2. Sync the project with Gradle files.
 3. Select an Android device or emulator (API Level 24+).
 4. Click **Run**.
@@ -92,16 +93,29 @@ com.example.twinmindrecordingapphomeassignment/
    - `RecordingService` starts in the foreground to capture audio via `AudioRecord`.
    - Audio is saved as headered **WAV** files in chunks to ensure compatibility with OpenAI.
 
-2. **Transcription**
-   - Once a chunk is saved, `TranscriptionWorker` sends the WAV file to the **OpenAI Whisper API**.
-   - The returned text is stored in the local database and updated in the UI.
+2. **Background Processing (WorkManager)**
+   - As soon as a chunk is saved, a `TranscriptionWorker` is enqueued.
+   - WorkManager handles the upload to OpenAI Whisper API in the background, ensuring the UI remains responsive and recording is never interrupted by network latency.
 
 3. **Summary Generation**
-   - After the recording stops and all chunks are transcribed, `SummaryWorker` sends the full transcript to **OpenAI GPT-4**.
+   - Once all chunks are transcribed, `SummaryWorker` sends the full transcript to **OpenAI GPT-4**.
    - A structured summary (Title, Key Points, Action Items) is generated and displayed.
 
 4. **Local Persistence**
    - All data is stored locally in **Room**, allowing users to view previous recordings and summaries offline.
+
+---
+
+## Edge Case Handling
+
+This app is built to be resilient and handle common interruptions gracefully:
+
+- **Phone Calls**: The app listens for call states. If a call starts, recording pauses automatically with the status **"Paused - Phone call"** and resumes when the call ends.
+- **Audio Focus**: If another app (like YouTube) starts playing audio, the recording pauses with the status **"Paused – Audio focus lost"** and resumes once focus is regained.
+- **Low Storage**: Before and during recording, the app checks for available space. If storage drops below **50MB**, the recording stops gracefully to prevent data corruption.
+- **Process Death**: The recording session state is persisted in Room. If the app crashes or is killed, a `RecordingTerminationWorker` runs on the next launch to finalize unprocessed chunks.
+- **Noisy Silence Detection**: The app includes a strict filter for silent or noisy recordings. If the final transcript is empty or too short, it displays **"No speech detected"** instead of generating a generic AI summary.
+- **Device Changes**: Recording continues uninterrupted when switching between the phone microphone and Bluetooth/wired headsets.
 
 ---
 
@@ -110,5 +124,4 @@ com.example.twinmindrecordingapphomeassignment/
 - Add **Cloud Sync** for recordings using Firebase.  
 - Support **Multi-language** transcription.  
 - Implement **Sharing** functionality for summaries.  
-- Add **Search** and filtering for saved recordings.  
-- Improve **UI/UX** with dark mode support.
+- Add **Search** and filtering for saved recordings.
