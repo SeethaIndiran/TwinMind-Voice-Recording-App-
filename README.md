@@ -7,7 +7,8 @@ Built with **Jetpack Compose**, **MVVM**, **Dagger Hilt**, **Kotlin Coroutines**
 
 ## Features
 
-- **Voice Recording** – Record audio seamlessly with start, pause, and stop functionality.  
+- **Voice Recording** – Record audio seamlessly with start, pause, and stop functionality.
+- **Foreground Notification** – Shows active recording status with quick action.
 - **Transcription** – Converts recorded audio into text using **OpenAI Whisper API**.  
 - **AI-Powered Summary** – Generates a short, clear summary of the transcript using **OpenAI GPT model**.  
 - **Local Storage** – Saves recordings and summaries in local Room Database.  
