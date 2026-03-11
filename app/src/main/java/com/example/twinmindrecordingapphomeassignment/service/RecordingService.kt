@@ -511,6 +511,7 @@ class RecordingService : Service() {
         // Body tap intent
         val contentIntent = Intent(this, MainActivity::class.java).apply {
             putExtra("navigate_to", "recording")
+            putExtra(EXTRA_RECORDING_ID, currentRecordingId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingContentIntent = PendingIntent.getActivity(this, 0, contentIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -519,6 +520,7 @@ class RecordingService : Service() {
         val stopIntent = Intent(this, MainActivity::class.java).apply { 
             action = ACTION_STOP_RECORDING
             putExtra("navigate_to", "recording")
+            putExtra(EXTRA_RECORDING_ID, currentRecordingId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val stopPendingIntent = PendingIntent.getActivity(this, 1, stopIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
