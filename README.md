@@ -40,7 +40,7 @@ Follow these steps to get the project running on your local machine.
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/SeethaIndiran/Twin-Mind-Assignment-Recording-App-.git
-cd Twin-Mind-Assignment-Recording-App
+
 ```
 
 ### 2. Configure OpenAI API Key
