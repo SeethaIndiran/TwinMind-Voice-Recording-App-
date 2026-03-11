@@ -5,6 +5,7 @@ package com.example.twinmindrecordingapphomeassignment.presentation.viewmodel
 import android.app.Application
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.twinmindhomeassignmentrecordingapp.domain.model.MeetingSummary
@@ -41,8 +42,7 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             val recording = repository.getRecordingById(recordingId)
             recording?.let {
-                // Delete recording files
-                // Delete from database will be handled automatically
+                // Delete logic
             }
         }
     }
@@ -62,7 +62,8 @@ class RecordingViewModel @Inject constructor(
     val duration: StateFlow<Long> = _duration.asStateFlow()
 
     private var currentRecordingId: String? = null
-    private var timerJob: kotlinx.coroutines.Job? = null
+    private var timerJob: Job? = null
+    private var recordingObserverJob: Job? = null
 
     init {
         // Restore session if exists
@@ -77,30 +78,44 @@ class RecordingViewModel @Inject constructor(
                     )
                     _duration.value = it.currentDuration ?: 0L
                 } else {
-                    // Resume recording
                     _recordingState.value = RecordingState.Recording(it.currentDuration ?: 0L)
                     startTimer(it.startTime ?: System.currentTimeMillis())
                 }
+                currentRecordingId?.let { id -> observeRecordingStatus(id) }
             }
         }
 
-        // Observe session changes
         viewModelScope.launch {
             repository.observeSession().collectLatest { session ->
-                session?.let {
-                    if (it.isPaused == true) {
-                        _recordingState.value = RecordingState.Paused(
-                            it.pauseReason ?: "Unknown",
-                            it.currentDuration ?: 0L
-                        )
-                        _duration.value = it.currentDuration ?: 0L
-                        timerJob?.cancel()
-                    } else if (currentRecordingId != null) {
-                        _recordingState.value = RecordingState.Recording(it.currentDuration ?: 0L)
-                        if (timerJob?.isActive != true) {
-                            startTimer(it.startTime ?: System.currentTimeMillis())
-                        }
+                if (session == null) return@collectLatest
+                
+                currentRecordingId = session.recordingId
+                if (session.isPaused == true) {
+                    _recordingState.value = RecordingState.Paused(
+                        session.pauseReason ?: "Unknown",
+                        session.currentDuration ?: 0L
+                    )
+                    _duration.value = session.currentDuration ?: 0L
+                    timerJob?.cancel()
+                } else if (currentRecordingId != null) {
+                    _recordingState.value = RecordingState.Recording(session.currentDuration ?: 0L)
+                    if (timerJob?.isActive != true) {
+                        startTimer(session.startTime ?: System.currentTimeMillis())
                     }
+                }
+                currentRecordingId?.let { id -> observeRecordingStatus(id) }
+            }
+        }
+    }
+
+    private fun observeRecordingStatus(id: String) {
+        recordingObserverJob?.cancel()
+        recordingObserverJob = viewModelScope.launch {
+            repository.observeRecordingById(id).collect { recording ->
+                if (recording == null) return@collect
+                if (recording.status == RecordingStatus.PROCESSING || recording.status == RecordingStatus.COMPLETED) {
+                    timerJob?.cancel()
+                    _recordingState.value = RecordingState.Stopped(id)
                 }
             }
         }
@@ -123,6 +138,7 @@ class RecordingViewModel @Inject constructor(
 
         _recordingState.value = RecordingState.Recording(0L)
         startTimer(System.currentTimeMillis())
+        observeRecordingStatus(recordingId)
     }
 
     fun stopRecording() {
@@ -141,7 +157,7 @@ class RecordingViewModel @Inject constructor(
         timerJob?.cancel()
         timerJob = viewModelScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(1000)
+                delay(1000)
                 val elapsed = System.currentTimeMillis() - startTime
                 _duration.value = elapsed
             }
@@ -151,7 +167,7 @@ class RecordingViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
-        // Enqueue termination worker to handle process death
+        recordingObserverJob?.cancel()
         RecordingTerminationWorker.enqueueTerminationWork(getApplication())
     }
 }
@@ -173,7 +189,6 @@ class SummaryViewModel @Inject constructor(
     private var recordingObserverJob: Job? = null
 
     fun loadRecording(recordingId: String) {
-        // Cancel previous observer if any
         recordingObserverJob?.cancel()
 
         recordingObserverJob = viewModelScope.launch {
@@ -185,32 +200,28 @@ class SummaryViewModel @Inject constructor(
                         return@collect
                     }
 
+                    // If we are currently streaming, we don't want DB updates to flicker the UI
+                    if (isGeneratingSummary) return@collect
+
                     when (recording.status) {
                         RecordingStatus.PROCESSING -> {
-                            _summaryState.value = SummaryState.Loading
+                            _summaryState.value = SummaryState.Processing
                         }
                         RecordingStatus.COMPLETED -> {
                             if (recording.summary != null) {
-                                // Summary is already generated and stored.
                                 _summaryState.value = SummaryState.Completed(recording.summary!!)
-                                isGeneratingSummary = false
                             } else if (!recording.transcript.isNullOrBlank()) {
-                                // Transcript is ready, but no summary yet. Generate it.
                                 if (!isGeneratingSummary) {
-                                    isGeneratingSummary = true
-                                    generateSummary(recording.id, recording.transcript!!)
+                                   isGeneratingSummary = true
+                                   generateSummary(recording.id, recording.transcript!!)
                                 }
                             } else {
-                                // Recording is complete but has no transcript.
-                                _summaryState.value = SummaryState.Error("No speech was detected in the recording. A summary could not be generated.")
-                                isGeneratingSummary = false
+                                // Only show NO_AUDIO if the transcript is truly ready and empty
+                                _summaryState.value = SummaryState.Error("NO_AUDIO_DETECTED")
                             }
                         }
                         else -> {
-                            // For any other status, assume it's loading or idle.
-                            if (!isGeneratingSummary) {
-                                _summaryState.value = SummaryState.Idle
-                            }
+                            _summaryState.value = SummaryState.Idle
                         }
                     }
                 }
@@ -219,43 +230,44 @@ class SummaryViewModel @Inject constructor(
 
     fun generateSummary(recordingId: String, transcript: String) {
         viewModelScope.launch {
+            // isGeneratingSummary is already true from the caller
             _summaryState.value = SummaryState.Loading
 
             try {
-                var finalSummary: MeetingSummary? = null
+                var latestSummary: MeetingSummary? = null
 
-                // Streaming callback updates partial summary
                 repository.generateSummaryStreaming(recordingId, transcript) { partialSummary ->
-                    finalSummary = partialSummary
+                    latestSummary = partialSummary
+                    // Use streaming state to show the live typing effect
                     _summaryState.value = SummaryState.Streaming(partialSummary)
                 }
 
-                // After streaming completes, wait a bit for DB save
-                if (finalSummary != null) {
-                    delay(100) // Small delay to ensure DB write completes
-                    _summaryState.value = SummaryState.Completed(finalSummary!!)
+                if (latestSummary != null) {
+                    delay(300) // Smooth transition to final state
+                    _summaryState.value = SummaryState.Completed(latestSummary!!)
                 } else {
                     _summaryState.value = SummaryState.Error("No summary generated")
                 }
 
             } catch (e: Exception) {
+                if (e.message == "NO_AUDIO_DETECTED") {
+                    _summaryState.value = SummaryState.Error("NO_AUDIO_DETECTED")
+                } else {
+                    _summaryState.value = SummaryState.Error(
+                        e.message ?: "Failed to generate summary"
+                    )
+                }
+            } finally {
                 isGeneratingSummary = false
-                _summaryState.value = SummaryState.Error(
-                    e.message ?: "Failed to generate summary"
-                )
             }
         }
     }
 
     fun retrySummary() {
         val currentRecording = _recording.value
-        isGeneratingSummary = false
         if (currentRecording != null && !currentRecording.transcript.isNullOrBlank()) {
+            isGeneratingSummary = true
             generateSummary(currentRecording.id, currentRecording.transcript)
         }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
     }
 }

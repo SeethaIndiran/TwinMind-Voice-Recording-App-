@@ -118,29 +118,3 @@ class PhoneCallReceiver : BroadcastReceiver() {
         }
     }
 }
-
-// Notification Action Receiver
-class NotificationActionReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context?, intent: Intent?) {
-        context ?: return
-
-        when (intent?.action) {
-            RecordingService.ACTION_STOP_RECORDING -> {
-                val serviceIntent = Intent(context, RecordingService::class.java).apply {
-                    action = RecordingService.ACTION_STOP_RECORDING
-                }
-                context.startService(serviceIntent)
-            }
-            RecordingService.ACTION_RESUME_RECORDING -> {
-                val serviceIntent = Intent(context, RecordingService::class.java).apply {
-                    action = RecordingService.ACTION_RESUME_RECORDING
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
-            }
-        }
-    }
-}

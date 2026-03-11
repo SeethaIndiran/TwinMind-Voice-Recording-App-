@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.twinmindhomeassignmentrecordingapp.domain.model.MeetingSummary
@@ -58,7 +59,6 @@ fun SummaryScreen(
         ) {
             when (val state = summaryState) {
                 is SummaryState.Idle -> {
-                  //  LoadingView("Waiting for transcription...")
                     if (recording?.transcript?.isNotBlank() == true) {
                         LoadingView("Preparing summary...")
                     } else {
@@ -83,17 +83,56 @@ fun SummaryScreen(
                     )
                 }
                 is SummaryState.Error -> {
-
-                     /*   ErrorView(
+                    if (state.message == "NO_AUDIO_DETECTED" || state.message.contains("No speech", ignoreCase = true)) {
+                        NoAudioView(onBack = onNavigateBack)
+                    } else {
+                        ErrorView(
                             message = state.message,
                             onRetry = { viewModel.retrySummary() }
-                        )*/
-
+                        )
+                    }
                 }
-
                 is SummaryState.Processing -> {
                     LoadingView("Processing transcription...")
                 }
+                else -> {}
+            }
+        }
+    }
+}
+
+@Composable
+fun NoAudioView(onBack: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.MicOff,
+                contentDescription = null,
+                modifier = Modifier.size(80.dp),
+                tint = MaterialTheme.colorScheme.outline
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "No Audio Detected",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "It seems this recording is silent. We couldn't find any speech to transcribe or summarize.",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(onClick = onBack) {
+                Text("Go Back")
             }
         }
     }
@@ -162,7 +201,7 @@ fun ErrorView(
             ) {
                 Icon(Icons.Default.Refresh, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Retry")
+                Text("Retry Summary")
             }
         }
     }
@@ -171,7 +210,7 @@ fun ErrorView(
 @Composable
 fun SummaryContent(
     summary: MeetingSummary,
-    recording:Recording,
+    recording: Recording,
     isStreaming: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -180,7 +219,6 @@ fun SummaryContent(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // Title Section
         item {
             SummarySection(
                 icon = Icons.Default.Title,
@@ -197,7 +235,6 @@ fun SummaryContent(
             }
         }
 
-        // Summary Section
         item {
             SummarySection(
                 icon = Icons.Default.Description,
@@ -214,7 +251,6 @@ fun SummaryContent(
             }
         }
 
-        // Action Items Section
         if (summary.actionItems.isNotEmpty()) {
             item {
                 SummarySection(
@@ -231,7 +267,6 @@ fun SummaryContent(
             }
         }
 
-        // Key Points Section
         if (summary.keyPoints.isNotEmpty()) {
             item {
                 SummarySection(
@@ -248,18 +283,15 @@ fun SummaryContent(
             }
         }
 
-        // Full Transcript Section
         item {
-
-
             SummarySection(
-                icon = Icons.Default.Description,
+                icon = Icons.Default.Chat,
                 title = "Full Transcript",
                 isStreaming = false
             ) {
                 Text(
-                    text = recording?.transcript?.ifBlank {
-                        "No transcript available. Transcription may still be processing."
+                    text = recording.transcript?.ifBlank {
+                        "No transcript available."
                     } ?: "Transcript not ready",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
@@ -268,7 +300,6 @@ fun SummaryContent(
             }
         }
 
-        // Streaming indicator
         if (isStreaming) {
             item {
                 Row(

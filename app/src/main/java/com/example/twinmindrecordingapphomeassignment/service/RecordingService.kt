@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
-import java.io.RandomAccessFile
 import java.util.*
 import javax.inject.Inject
 
@@ -48,6 +47,8 @@ class RecordingService : Service() {
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
     private var timerJob: Job? = null
+    
+    @Volatile
     private var isStopping = false
 
     private var audioInputStream: InputStream? = null
@@ -66,6 +67,7 @@ class RecordingService : Service() {
     private val _recordingDuration = MutableStateFlow(0L)
     val recordingDuration: StateFlow<Long> = _recordingDuration
 
+    @Volatile
     private var isPaused = false
     private var pauseReason: String? = null
 
@@ -80,7 +82,7 @@ class RecordingService : Service() {
         const val ACTION_START_RECORDING = "START_RECORDING"
         const val ACTION_STOP_RECORDING = "STOP_RECORDING"
         const val ACTION_PAUSE_RECORDING = "PAUSE_RECORDING"
-        const val ACTION_RESUME_RECORDING = "ACTION_RESUME_RECORDING"
+        const val ACTION_RESUME_RECORDING = "RESUME_RECORDING"
 
         const val EXTRA_RECORDING_ID = "recording_id"
 
@@ -100,13 +102,18 @@ class RecordingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val action = intent?.action
+        Log.d("RecordingService", "onStartCommand received action: $action")
+        when (action) {
             ACTION_START_RECORDING -> {
                 val recordingId = intent.getStringExtra(EXTRA_RECORDING_ID)
                     ?: UUID.randomUUID().toString()
                 startRecording(recordingId)
             }
-            ACTION_STOP_RECORDING -> stopRecording()
+            ACTION_STOP_RECORDING -> {
+                Log.d("RecordingService", "Handling STOP_RECORDING action")
+                stopRecording()
+            }
             ACTION_PAUSE_RECORDING -> pauseRecording("Manual pause")
             ACTION_RESUME_RECORDING -> resumeRecording()
         }
@@ -114,7 +121,6 @@ class RecordingService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-    
 
     private fun startRecording(recordingId: String) {
         if (ActivityCompat.checkSelfPermission(
@@ -132,6 +138,7 @@ class RecordingService : Service() {
         startTime = System.currentTimeMillis()
         pausedDuration = 0L
         isStopping = false
+        isPaused = false
 
         if (!hasEnoughStorage()) {
             notifyError("Recording stopped - Low storage")
@@ -173,19 +180,13 @@ class RecordingService : Service() {
                 AUDIO_FORMAT,
                 bufferSize
             )
-            
+
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e("RecordingService", "AudioRecord initialization failed. State: ${audioRecord?.state}")
+                Log.e("RecordingService", "AudioRecord initialization failed")
                 audioRecord = null
             } else {
                 audioRecord?.startRecording()
-                if (audioRecord?.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                    Log.e("RecordingService", "AudioRecord failed to start recording. RecordingState: ${audioRecord?.recordingState}")
-                    audioRecord?.release()
-                    audioRecord = null
-                } else {
-                    Log.d("RecordingService", "AudioRecord started successfully")
-                }
+                Log.d("RecordingService", "AudioRecord started successfully")
             }
         } catch (e: Exception) {
             Log.e("RecordingService", "Exception initializing AudioRecord", e)
@@ -202,7 +203,6 @@ class RecordingService : Service() {
             currentAudioResource = testAudioFiles.random()
             audioInputStream?.close()
             audioInputStream = resources.openRawResource(currentAudioResource!!)
-            Log.d("RecordingService", "Initialized test audio fallback: $currentAudioResource")
         } catch (e: Exception) {
             Log.e("RecordingService", "Error initializing test audio", e)
         }
@@ -214,29 +214,22 @@ class RecordingService : Service() {
       val samplesPerChunk = (SAMPLE_RATE * CHUNK_DURATION_MS / 1000).toInt()
       val overlapSamples = (SAMPLE_RATE * OVERLAP_MS / 1000).toInt()
 
-      var silenceStartTime = 0L
-      var isSilent = false
-
       while (isActive && !isStopping) {
           if (isPaused) {
               delay(100)
               continue
           }
 
-          // Use real MIC if available, otherwise ONLY fallback to test audio if MIC failed to initialize
-          val readSize = if (audioRecord != null) {
-              val result = audioRecord!!.read(buffer, 0, buffer.size)
-              if (result < 0) {
-                  Log.e("RecordingService", "AudioRecord read error: $result")
-                  0
-              } else {
-                  // Log amplitude to verify capturing actual audio
-                  val max = buffer.take(result).maxOrNull() ?: 0
-                  if (max > 0) Log.v("RecordingService", "Captured audio data, max amplitude: $max")
-                  result
+          val currentRecord = audioRecord
+          val readSize = if (currentRecord != null && currentRecord.state == AudioRecord.STATE_INITIALIZED) {
+              try {
+                  val result = currentRecord.read(buffer, 0, buffer.size)
+                  if (result < 0) 0 else result
+              } catch (e: Exception) { 
+                  Log.e("RecordingService", "Error reading AudioRecord", e)
+                  0 
               }
           } else {
-              // Fallback to test audio only if AudioRecord is null
               if (audioInputStream == null) initializeRandomTestAudio()
               val byteBuffer = ByteArray(buffer.size * 2)
               val bytesRead = audioInputStream?.read(byteBuffer) ?: 0
@@ -252,30 +245,14 @@ class RecordingService : Service() {
           }
 
           if (readSize > 0) {
-              val avgAmplitude = buffer.take(readSize).map { kotlin.math.abs(it.toInt()) }.average()
-              if (avgAmplitude < SILENCE_THRESHOLD) {
-                  if (silenceStartTime == 0L) silenceStartTime = System.currentTimeMillis()
-                  else if (System.currentTimeMillis() - silenceStartTime > SILENCE_DURATION_MS && !isSilent) {
-                      isSilent = true
-                      notifyWarning("No audio detected - Check microphone")
-                  }
-              } else {
-                  silenceStartTime = 0L
-                  if (isSilent) {
-                      isSilent = false
-                      updateNotification("Recording...", getCurrentDuration())
-                  }
-              }
-
               chunkBuffer.addAll(buffer.take(readSize).toList())
-
               if (chunkBuffer.size >= samplesPerChunk) {
                   saveChunk(chunkBuffer.toShortArray())
                   chunkBuffer = chunkBuffer.takeLast(overlapSamples).toMutableList()
                   chunkSequence++
               }
           } else {
-              delay(50) // Prevent CPU hammering if no data
+              delay(50)
           }
 
           if (!hasEnoughStorage()) {
@@ -296,14 +273,10 @@ class RecordingService : Service() {
         val fileName = "chunk_${recordingId}_$chunkSequence.wav"
         val file = File(getRecordingDir(recordingId), fileName)
 
-        Log.d("RecordingService", "Saving chunk $chunkSequence for $recordingId (Size: ${audioData.size})")
-
         withContext(Dispatchers.IO) {
             try {
                 FileOutputStream(file).use { fos ->
-                    // Write WAV Header (44 bytes)
                     writeWavHeader(fos, 1, SAMPLE_RATE, 16, audioData.size * 2L)
-                    
                     val bytes = ByteArray(audioData.size * 2)
                     for (i in audioData.indices) {
                         bytes[i * 2] = (audioData[i].toInt() and 0xFF).toByte()
@@ -339,22 +312,22 @@ class RecordingService : Service() {
         val byteRate = (sampleRate * channels * bitDepth / 8).toLong()
 
         val header = ByteArray(44)
-        header[0] = 'R'.toByte()
-        header[1] = 'I'.toByte()
-        header[2] = 'F'.toByte()
-        header[3] = 'F'.toByte()
+        header[0] = 'R'.code.toByte()
+        header[1] = 'I'.code.toByte()
+        header[2] = 'F'.code.toByte()
+        header[3] = 'F'.code.toByte()
         header[4] = (totalLength and 0xffL).toByte()
         header[5] = (totalLength shr 8 and 0xffL).toByte()
         header[6] = (totalLength shr 16 and 0xffL).toByte()
         header[7] = (totalLength shr 24 and 0xffL).toByte()
-        header[8] = 'W'.toByte()
-        header[9] = 'A'.toByte()
-        header[10] = 'V'.toByte()
-        header[11] = 'E'.toByte()
-        header[12] = 'f'.toByte()
-        header[13] = 'm'.toByte()
-        header[14] = 't'.toByte()
-        header[15] = ' '.toByte()
+        header[8] = 'W'.code.toByte()
+        header[9] = 'A'.code.toByte()
+        header[10] = 'V'.code.toByte()
+        header[11] = 'E'.code.toByte()
+        header[12] = 'f'.code.toByte()
+        header[13] = 'm'.code.toByte()
+        header[14] = 't'.code.toByte()
+        header[15] = ' '.code.toByte()
         header[16] = 16
         header[17] = 0
         header[18] = 0
@@ -375,10 +348,10 @@ class RecordingService : Service() {
         header[33] = 0
         header[34] = bitDepth.toByte()
         header[35] = 0
-        header[36] = 'd'.toByte()
-        header[37] = 'a'.toByte()
-        header[38] = 't'.toByte()
-        header[39] = 'a'.toByte()
+        header[36] = 'd'.code.toByte()
+        header[37] = 'a'.code.toByte()
+        header[38] = 't'.code.toByte()
+        header[39] = 'a'.code.toByte()
         header[40] = (dataLength and 0xffL).toByte()
         header[41] = (dataLength shr 8 and 0xffL).toByte()
         header[42] = (dataLength shr 16 and 0xffL).toByte()
@@ -396,7 +369,7 @@ class RecordingService : Service() {
         } catch (e: Exception) {
             Log.e("RecordingService", "Error stopping AudioRecord during pause", e)
         }
-        
+
         val status = when (reason) {
             "Phone call" -> "Paused - Phone call"
             "Audio focus lost" -> "Paused - Audio focus lost"
@@ -437,8 +410,9 @@ class RecordingService : Service() {
         isStopping = true
         isPaused = false
 
-        Log.d("RecordingService", "Stopping recording for $currentRecordingId")
+        Log.d("RecordingService", "StopRecording triggered for $currentRecordingId")
 
+        // 1. Immediately stop AudioRecord to unblock the read loop
         try {
             audioRecord?.stop()
             audioRecord?.release()
@@ -451,21 +425,23 @@ class RecordingService : Service() {
         audioFocusManager.abandonAudioFocus()
 
         val duration = getCurrentDuration()
+        updateNotification("Processing recording...", duration)
 
         serviceScope.launch {
             currentRecordingId?.let { id ->
                 repository.updateRecordingStatus(id, RecordingStatus.PROCESSING)
+                
+                // 2. Wait for the loop to exit (now unblocked)
                 recordingJob?.join()
 
                 val chunks = repository.getChunksByRecordingId(id)
                 if (chunks.isEmpty()) {
-                    Log.d("RecordingService", "No chunks saved, inserting mock silence chunk")
                     saveChunk(ShortArray((SAMPLE_RATE * 2 / 1).toInt()) { 0 })
                 }
 
                 repository.updateRecordingDuration(id, duration)
                 repository.clearSession()
-                
+
                 val untranscribed = repository.getUntranscribedChunksCount(id)
                 if (untranscribed == 0) {
                     val finalChunks = repository.getChunksByRecordingId(id)
@@ -477,6 +453,8 @@ class RecordingService : Service() {
                     }
                 }
             }
+            
+            // 3. Ensure we stop foreground and self on main thread
             withContext(Dispatchers.Main) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -524,36 +502,43 @@ class RecordingService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Recording Service", NotificationManager.IMPORTANCE_DEFAULT)
+            val channel = NotificationChannel(CHANNEL_ID, "Recording Service", NotificationManager.IMPORTANCE_LOW)
             notificationManager.createNotificationChannel(channel)
         }
     }
 
     private fun createNotification(status: String, duration: Long): Notification {
-        val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-        val stopIntent = Intent(this, NotificationActionReceiver::class.java).apply { action = ACTION_STOP_RECORDING }
-        val stopPendingIntent = PendingIntent.getBroadcast(this, 1, stopIntent, PendingIntent.FLAG_IMMUTABLE)
+        // Body tap intent
+        val contentIntent = Intent(this, MainActivity::class.java).apply {
+            putExtra("navigate_to", "recording")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingContentIntent = PendingIntent.getActivity(this, 0, contentIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        
+        // Stop action intent
+        val stopIntent = Intent(this, MainActivity::class.java).apply { 
+            action = ACTION_STOP_RECORDING
+            putExtra("navigate_to", "recording")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val stopPendingIntent = PendingIntent.getActivity(this, 1, stopIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(status)
             .setContentText("Duration: ${formatDuration(duration)}")
             .setSmallIcon(R.drawable.baseline_fiber_manual_record_24)
-            .setContentIntent(pendingIntent)
-            .addAction(R.drawable.baseline_stop_circle_24, "Stop", stopPendingIntent)
+            .setContentIntent(pendingContentIntent)
             .setOngoing(true)
             .setSilent(true)
-            .build()
+            .addAction(R.drawable.baseline_stop_circle_24, "Stop", stopPendingIntent)
+
+        return builder.build()
     }
 
     private fun updateNotification(status: String, duration: Long) {
-        notificationManager.notify(NOTIFICATION_ID, createNotification(status, duration))
-    }
-
-    private fun notifyWarning(message: String) {
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Warning").setContentText(message).setSmallIcon(R.drawable.ic_launcher_background).setPriority(NotificationCompat.PRIORITY_HIGH).build()
-        notificationManager.notify(2, notification)
+        if (!isStopping) {
+            notificationManager.notify(NOTIFICATION_ID, createNotification(status, duration))
+        }
     }
 
     private fun notifyError(message: String) {
