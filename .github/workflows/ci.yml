@@ -1,0 +1,67 @@
+name: Android CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Setup JDK 17 (required for modern Android Gradle Plugin)
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      # 3. Give permission to Gradle wrapper
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # 4. Validate Gradle Wrapper (security best practice)
+      - name: Validate Gradle Wrapper
+        uses: gradle/wrapper-validation-action@v2
+
+      # 5. Cache Gradle dependencies (speed optimization)
+      - name: Setup Gradle Cache
+        uses: gradle/gradle-build-action@v3
+
+      # 6. Run Android Lint (VERY IMPORTANT in real companies)
+      - name: Run Lint
+        run: ./gradlew lintDebug
+
+      # 7. Build Debug APK (ensures app compiles)
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      # 8. Build Release Bundle (Play Store verification)
+      - name: Build Release Bundle
+        run: ./gradlew bundleRelease
+
+      # 9. Upload Debug APK as artifact (download from GitHub)
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+      # 10. Upload Lint Reports (optional but very useful)
+      - name: Upload Lint Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: app/build/reports/lint-results-debug.html
