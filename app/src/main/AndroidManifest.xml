@@ -12,7 +12,7 @@
 
     <uses-feature
         android:name="com.google.ar.core"
-        android:required="false" />
+        tools:node="remove" />
 
     <application
         android:allowBackup="true"
@@ -25,6 +25,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TwinMindRecordingAppHomeAssignment"
         tools:targetApi="31">
+
+        <meta-data
+            android:name="com.google.ar.core.min_apk_version"
+            tools:node="remove" />
         <activity
             android:name="com.example.twinmindrecordingapphomeassignment.MainActivity"
             android:exported="true"
