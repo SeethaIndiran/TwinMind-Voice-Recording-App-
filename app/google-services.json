@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "439662827938",
+    "project_id": "voice-recording-ai-app",
+    "storage_bucket": "voice-recording-ai-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:439662827938:android:41cef8ff572e6aa3637afb",
+        "android_client_info": {
+          "package_name": "com.example.twinmindrecordingapphomeassignment"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB8kOtIl-4nnKBZxFSJ_2xtk2fM2uyYSf8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
