@@ -40,4 +40,5 @@ jobs:
           firebase appdistribution:distribute app/build/outputs/apk/release/app-release.apk \
           --app 1:439662827938:android:41cef8ff572e6aa3637afb \
           --groups "internal-testers" \
-          --release-notes "Automated build from GitHub Actions"
+          --release-notes "Automated build from GitHub Actions" \
+          --token "$FIREBASE_TOKEN"
