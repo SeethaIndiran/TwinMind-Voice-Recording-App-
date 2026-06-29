@@ -24,27 +24,37 @@ jobs:
       - name: Grant permission
         run: chmod +x gradlew
 
-      # 4. Build APK
+      # 4. Build Release APK (unsigned)
       - name: Build Release APK
         run: |
           ./gradlew assembleRelease \
             -PVERSION_CODE=${{ github.run_number }} \
             -PVERSION_NAME=1.0.${{ github.run_number }}
 
-      # 5. Debug APK output
-      - name: Find APK
+      # 5. Find APK
+      - name: Locate APK
         run: find app/build -type f -name "*.apk"
 
-      # 6. Install Firebase CLI
+      # 6. Sign APK (NEW STEP ADDED)
+      - name: Sign Release APK
+        uses: r0adkll/sign-android-release@v1
+        with:
+          releaseDirectory: app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.ANDROID_KEYSTORE }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          alias: ${{ secrets.ANDROID_DEVS_ALIAS }}
+          keyPassword: ${{ secrets.ANDROID_DEVS_ALIAS_PASSWORD }}
+
+      # 7. Install Firebase CLI
       - name: Install Firebase Tools
         run: npm install -g firebase-tools
 
-      # 7. Authenticate using Service Account
+      # 8. Authenticate using Service Account
       - name: Authenticate Firebase
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > service-account.json
 
-      # 8. Upload to Firebase App Distribution
+      # 9. Upload to Firebase App Distribution
       - name: Upload to Firebase
         run: |
           APK_PATH=$(find app/build -type f -name "*.apk" | head -n 1)
