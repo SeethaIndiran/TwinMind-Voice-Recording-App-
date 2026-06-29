@@ -26,7 +26,10 @@ jobs:
 
       # 4. Build APK
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: |
+          ./gradlew assembleRelease \
+            -PVERSION_CODE=${{ github.run_number }} \
+            -PVERSION_NAME=1.0.${{ github.run_number }}
 
       # 5. Debug APK output
       - name: Find APK
