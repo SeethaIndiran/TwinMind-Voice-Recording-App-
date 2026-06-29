@@ -13,7 +13,7 @@ plugins {
 android {
     namespace = "com.example.twinmindrecordingapphomeassignment"
     compileSdk = 36
-    buildToolsVersion = "36.0.0"
+
 
     defaultConfig {
         applicationId = "com.example.twinmindrecordingapphomeassignment"
@@ -41,9 +41,31 @@ android {
         noCompress += "wav"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystoreFile = rootProject.file("keystore.jks")
+
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+
+            val keystoreFile = rootProject.file("app/keystore.jks")
+
+            signingConfig = if (keystoreFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -88,7 +110,7 @@ dependencies {
     implementation(libs.core)
     kapt(libs.hilt.android.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
-    
+
     // Room - Database
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
