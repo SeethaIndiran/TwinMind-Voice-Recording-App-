@@ -20,18 +20,18 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # 3. Setup Android SDK (IMPORTANT FIX)
+      # 3. Setup Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       # 4. Accept licenses
       - name: Accept Android Licenses
-        run: yes | sdkmanager --licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
 
-      # 5. Install Build Tools (FIX for zipalign error)
+      # 5. Install Build Tools (Fix for zipalign error)
       - name: Install Android Build Tools
         run: |
-          sdkmanager "build-tools;34.0.0"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;36.0.0"
 
       # 6. Make gradlew executable
       - name: Grant permission
@@ -44,11 +44,7 @@ jobs:
             -PVERSION_CODE=${{ github.run_number }} \
             -PVERSION_NAME=1.0.${{ github.run_number }}
 
-      # 8. Find APK
-      - name: Locate APK
-        run: find app/build -type f -name "*.apk"
-
-      # 9. Sign APK (FIXED now works because zipalign exists)
+      # 8. Sign APK
       - name: Sign Release APK
         uses: r0adkll/sign-android-release@v1
         with:
@@ -57,23 +53,27 @@ jobs:
           keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
           alias: ${{ secrets.ANDROID_DEVS_ALIAS }}
           keyPassword: ${{ secrets.ANDROID_DEVS_ALIAS_PASSWORD }}
+          buildToolsVersion: 36.0.0
 
-      # 10. Install Firebase CLI
+      # 9. Install Firebase CLI
       - name: Install Firebase Tools
         run: npm install -g firebase-tools
 
-      # 11. Authenticate Firebase
+      # 10. Authenticate Firebase
       - name: Authenticate Firebase
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > service-account.json
 
-      # 12. Upload to Firebase
+      # 11. Upload to Firebase
       - name: Upload to Firebase
         run: |
-          APK_PATH=$(find app/build -type f -name "*.apk" | head -n 1)
+          # Specifically find the signed output file
+          APK_PATH=$(find app/build/outputs/apk/release -type f ! -name "*unsigned*" -name "*.apk" | head -n 1)
+          
+          echo "Uploading APK found at: $APK_PATH"
 
           export GOOGLE_APPLICATION_CREDENTIALS=service-account.json
 
           firebase appdistribution:distribute "$APK_PATH" \
             --app 1:439662827938:android:41cef8ff572e6aa3637afb \
             --groups "internal-testers" \
-            --release-notes "Automated build from GitHub Actions"
+            --release-notes "Automated build from GitHub Actions (Run #${{ github.run_number }})"
