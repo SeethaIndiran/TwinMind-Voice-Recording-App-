@@ -61,8 +61,7 @@ jobs:
       # ------------------------------------------------------------
       - name: Decode Keystore
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 --decode > keystore.jks
-
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore.jks
       # ------------------------------------------------------------
       # STEP 8: Build RELEASE APK using Gradle
       # - Inject version code from GitHub run number
