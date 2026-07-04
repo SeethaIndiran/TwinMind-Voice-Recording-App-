@@ -113,7 +113,22 @@ jobs:
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > service-account.json
 
       # ------------------------------------------------------------
-      # 14. Upload to Firebase App Distribution
+      # 14. Generate Release Notes from latest Git commit
+      # ------------------------------------------------------------
+      - name: Generate Release Notes
+        run: |
+          echo "Release Build #${{ github.run_number }}" > release-notes.txt
+          echo "Build Date: $(date -u)" >> release-notes.txt
+          echo "" >> release-notes.txt
+          echo "Latest Changes:" >> release-notes.txt
+          git log -1 --pretty=format:"- %s" >> release-notes.txt
+
+          echo ""
+          echo "Generated Release Notes:"
+          cat release-notes.txt  
+
+      # ------------------------------------------------------------
+      # 15. Upload to Firebase App Distribution
       # ------------------------------------------------------------
       - name: Upload to Firebase App Distribution
         run: |
@@ -126,4 +141,4 @@ jobs:
           firebase appdistribution:distribute "$APK_PATH" \
             --app 1:439662827938:android:41cef8ff572e6aa3637afb \
             --groups "internal-testers" \
-            --release-notes "Automated build #${{ github.run_number }}"
+            --release-notes-file release-notes.txt
