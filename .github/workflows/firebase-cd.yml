@@ -139,9 +139,24 @@ jobs:
 
           export GOOGLE_APPLICATION_CREDENTIALS=service-account.json
 
+          # Decide environment based on branch
+          if [ "${GITHUB_REF_NAME}" = "develop" ]; then
+            GROUP="qa-testers"
+            ENV="QA"
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            GROUP="internal-testers"
+            ENV="PRODUCTION"
+          else
+            GROUP="qa-testers"
+            ENV="DEV"
+          fi
+
+          echo "Environment: $ENV"
+          echo "Firebase Group: $GROUP"
+
           firebase appdistribution:distribute "$APK_PATH" \
             --app 1:439662827938:android:41cef8ff572e6aa3637afb \
-            --groups "internal-testers" \
+            --groups "$GROUP" \
             --release-notes-file release-notes.txt
 
       # ------------------------------------------------------------
