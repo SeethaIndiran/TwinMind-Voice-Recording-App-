@@ -16,6 +16,8 @@ jobs:
       # ------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # ------------------------------------------------------------
       # 2. Setup JDK 17 (Android build requirement)
@@ -113,7 +115,8 @@ jobs:
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > service-account.json
 
       # ------------------------------------------------------------
-      # 14. Generate Release Notes from latest Git commit
+        # ------------------------------------------------------------
+      # 14. Generate Release Notes (Commit Range based - Production style)
       # ------------------------------------------------------------
       - name: Generate Release Notes
         run: |
@@ -121,7 +124,9 @@ jobs:
           echo "Build Date: $(date -u)" >> release-notes.txt
           echo "" >> release-notes.txt
           echo "Latest Changes:" >> release-notes.txt
-          git log -1 --pretty=format:"- %s" >> release-notes.txt
+
+          # safer: always get last 10 commits in this push
+          git log -10 --no-merges --pretty=format:"- %s" >> release-notes.txt
 
           echo ""
           echo "Generated Release Notes:"
@@ -142,3 +147,34 @@ jobs:
             --app 1:439662827938:android:41cef8ff572e6aa3637afb \
             --groups "internal-testers" \
             --release-notes-file release-notes.txt
+
+      # ------------------------------------------------------------
+      # 16. GitHub Build Summary (Production Visibility)
+      # ------------------------------------------------------------
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "## 🚀 Build Report #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📌 Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📦 Artifacts Generated:" >> $GITHUB_STEP_SUMMARY
+          echo "- APK (Firebase App Distribution)" >> $GITHUB_STEP_SUMMARY
+          echo "- AAB (Play Store Ready)" >> $GITHUB_STEP_SUMMARY
+          echo "- GitHub Artifacts (APK + AAB)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 🔥 Firebase Distribution:" >> $GITHUB_STEP_SUMMARY
+          echo "APK uploaded to internal testers group" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📝 Release Notes:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f release-notes.txt ]; then
+            cat release-notes.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- No release notes generated" >> $GITHUB_STEP_SUMMARY
+          fi
