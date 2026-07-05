@@ -76,13 +76,20 @@ jobs:
             -PVERSION_NAME=1.0.${{ github.run_number }}
 
       # ------------------------------------------------------------
-      # 9. Locate APK
+      # 9. Crashlytics Mapping Upload (IMPORTANT for release debugging)
+      # ------------------------------------------------------------
+      - name: Upload Crashlytics Mapping File
+        run: |
+          ./gradlew app:uploadCrashlyticsMappingFileRelease
+
+      # ------------------------------------------------------------
+      # 10. Locate APK
       # ------------------------------------------------------------
       - name: Locate APK
         run: find app/build/outputs/apk/release -name "*.apk"
 
       # ------------------------------------------------------------
-      # 10. Upload APK Artifact
+      # 11. Upload APK Artifact
       # ------------------------------------------------------------
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -92,7 +99,7 @@ jobs:
           retention-days: 30
 
       # ------------------------------------------------------------
-      # 11. Upload AAB Artifact
+      # 12. Upload AAB Artifact
       # ------------------------------------------------------------
       - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
@@ -102,19 +109,19 @@ jobs:
           retention-days: 30
 
       # ------------------------------------------------------------
-      # 12. Install Firebase CLI
+      # 13. Install Firebase CLI
       # ------------------------------------------------------------
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@latest
 
       # ------------------------------------------------------------
-      # 13. Setup Firebase Service Account
+      # 14. Setup Firebase Service Account
       # ------------------------------------------------------------
       - name: Setup Firebase Service Account
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > service-account.json
 
       # ------------------------------------------------------------
-      # 14. Generate Release Notes (clean commit-based)
+      # 15. Generate Release Notes (clean commit-based)
       # ------------------------------------------------------------
       - name: Generate Release Notes
         run: |
@@ -141,7 +148,7 @@ jobs:
           cat release-notes.txt
 
       # ------------------------------------------------------------
-      # 15. Upload to Firebase App Distribution
+      # 16. Upload to Firebase App Distribution
       # ------------------------------------------------------------
       - name: Upload to Firebase App Distribution
         run: |
@@ -172,7 +179,7 @@ jobs:
             --release-notes-file release-notes.txt
 
       # ------------------------------------------------------------
-      # 16. Create Git Release Tag (Production Versioning)
+      # 17. Create Git Release Tag (Production Versioning)
       # ------------------------------------------------------------
       - name: Create Git Tag
         if: github.ref_name == 'main'
@@ -190,7 +197,7 @@ jobs:
           git push origin $VERSION
 
       # ------------------------------------------------------------
-      # 17. GitHub Build Summary (Production Visibility)
+      # 18. GitHub Build Summary (Production Visibility)
       # ------------------------------------------------------------
       - name: Build Summary
         if: always()
@@ -207,8 +214,24 @@ jobs:
           echo "- GitHub Artifacts (APK + AAB)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
+          echo "### 🌍 Environment:" >> $GITHUB_STEP_SUMMARY
+          if [ "${GITHUB_REF_NAME}" = "develop" ]; then
+            echo "QA" >> $GITHUB_STEP_SUMMARY
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "PRODUCTION" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "DEV" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           echo "### 🔥 Firebase Distribution:" >> $GITHUB_STEP_SUMMARY
-          echo "APK uploaded to internal testers group" >> $GITHUB_STEP_SUMMARY
+          if [ "${GITHUB_REF_NAME}" = "develop" ]; then
+            echo "QA Testers" >> $GITHUB_STEP_SUMMARY
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "Internal Testers" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Development Testers" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### 📝 Release Notes:" >> $GITHUB_STEP_SUMMARY

@@ -7,7 +7,9 @@ plugins {
     alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.hilt.android)
 
+
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 android {
@@ -134,6 +136,11 @@ dependencies {
 
     // Gson - JSON parsing
     implementation(libs.gson)
+
+    implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
+
+    implementation(libs.firebase.crashlytics)
+    implementation(libs.firebase.analytics)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
