@@ -121,6 +121,17 @@ jobs:
           echo "Release Build #${{ github.run_number }}" > release-notes.txt
           echo "Build Date: $(date -u)" >> release-notes.txt
           echo "" >> release-notes.txt
+
+          # 👉 ADD ENVIRONMENT HERE
+          if [ "${GITHUB_REF_NAME}" = "develop" ]; then
+            echo "Environment: QA" >> release-notes.txt
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "Environment: PRODUCTION" >> release-notes.txt
+          else
+            echo "Environment: DEV" >> release-notes.txt
+          fi
+
+          echo "" >> release-notes.txt
           echo "Latest Changes:" >> release-notes.txt
 
           git log -10 --no-merges --pretty=format:"- %s" >> release-notes.txt
