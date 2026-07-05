@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+  # ------------------------------------------------------------
+  # Gradle dependencies (Android)
+  # ------------------------------------------------------------
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+
+    # Group updates to avoid too many PRs
+    groups:
+      android-deps:
+        patterns:
+          - "*android*"
+          - "*compose*"
+          - "*kotlin*"
+          - "*firebase*"
+
+      network-deps:
+        patterns:
+          - "retrofit*"
+          - "okhttp*"
+          - "gson*"
+
+      test-deps:
+        patterns:
+          - "junit*"
+          - "mockito*"
+          - "espresso*"
+
+  # ------------------------------------------------------------
+  # GitHub Actions dependencies
+  # ------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
