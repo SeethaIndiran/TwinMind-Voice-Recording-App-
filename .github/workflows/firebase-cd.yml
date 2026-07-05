@@ -6,6 +6,9 @@ on:
       - develop
       - main
 
+permissions:
+  contents: write
+
 jobs:
   build-and-distribute:
     runs-on: ubuntu-latest
@@ -75,12 +78,7 @@ jobs:
             -PVERSION_CODE=${{ github.run_number }} \
             -PVERSION_NAME=1.0.${{ github.run_number }}
 
-      # ------------------------------------------------------------
-      # 9. Crashlytics Mapping Upload (IMPORTANT for release debugging)
-      # ------------------------------------------------------------
-      - name: Upload Crashlytics Mapping File
-        run: |
-          ./gradlew app:uploadCrashlyticsMappingFileRelease
+    
 
       # ------------------------------------------------------------
       # 10. Locate APK
@@ -195,9 +193,26 @@ jobs:
           git tag -a $VERSION -m "Release $VERSION"
 
           git push origin $VERSION
+          
+            # ------------------------------------------------------------
+      # 18. Create GitHub Release (Production Only)
+      # ------------------------------------------------------------
+      - name: Create GitHub Release
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Release v1.0.${{ github.run_number }}
+          body_path: release-notes.txt
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
       # ------------------------------------------------------------
-      # 18. GitHub Build Summary (Production Visibility)
+      # 19. GitHub Build Summary (Production Visibility)
       # ------------------------------------------------------------
       - name: Build Summary
         if: always()
