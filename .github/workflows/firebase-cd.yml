@@ -164,7 +164,7 @@ jobs:
       # 16. Create Git Release Tag (Production Versioning)
       # ------------------------------------------------------------
       - name: Create Git Tag
-        if: success()
+        if: github.ref_name == 'main'
         run: |
           VERSION="v1.0.${{ github.run_number }}"
 
@@ -173,8 +173,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git checkout main
-
+          # Tag the current commit (IMPORTANT)
           git tag -a $VERSION -m "Release $VERSION"
 
           git push origin $VERSION
